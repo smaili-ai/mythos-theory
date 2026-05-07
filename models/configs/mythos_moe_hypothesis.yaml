@@ -1,0 +1,89 @@
+# Primary Mythos MoE Hypothesis Configuration
+# Based on public information, scaling law extrapolation, and BBBF analysis.
+# All values are SPECULATIVE unless tagged [CONFIRMED].
+# This config is for the full-scale theoretical model.
+# For trainable experiments, see zaya1_moe.yaml and mini_mythos_core.yaml.
+
+model_name: "mythos_moe_hypothesis_v2"
+description: >
+  Primary architectural hypothesis for Anthropic's Claude Mythos.
+  Derives from: 10T param analyst estimates (S1, S2), Chinchilla scaling,
+  1M context constraint (P1, P2 [CONFIRMED]), and BBBF probe results.
+arch: "transformer_moe"
+
+# ── Parameter Budget ──────────────────────────────────────────────────────────
+parameter_budget:
+  total_params: 10_000_000_000_000    # 10T [SPECULATIVE, S1]
+  active_params_per_token: 1_000_000_000_000  # ~1T [SPECULATIVE]
+  active_fraction: 0.10               # ~10% sparse activation
+
+# ── Model Dimensions ──────────────────────────────────────────────────────────
+dimensions:
+  n_layers: 120
+  d_model: 16384
+  n_heads: 128
+  d_head: 128            # d_model / n_heads
+  d_ff: 65536            # 4x d_model, split across experts
+
+# ── MoE Configuration ─────────────────────────────────────────────────────────
+moe_config:
+  n_experts: 256
+  top_k: 4                            # Token-choice routing, 4 active experts
+  capacity_factor: 1.25
+  router_type: "load_balanced"        # Auxiliary load-balancing loss
+  router_architecture: "mlp_nonlinear"  # MLP router (ZAYA1-inspired, more expressive than linear)
+  expert_specialisation:              # Hypothesised domain clusters [SPECULATIVE]
+    code_experts:   [0, 16]           # Expert indices likely specialised for code
+    cyber_experts:  [17, 32]          # Expert indices for security/exploit reasoning
+    math_experts:   [33, 48]          # Expert indices for mathematical reasoning
+    language_experts: [49, 255]       # General language + knowledge
+
+# ── Attention ─────────────────────────────────────────────────────────────────
+attention:
+  type: "grouped_query"               # GQA required for 1M context KV cache economics
+  kv_groups: 16                       # 8x reduction vs. MHA
+  attention_pattern: "hybrid_periodic"
+  full_attention_interval: 8          # Full causal attention every 8 layers [H-ATT-1]
+  sliding_window_size: 4096           # Intermediate layers: local 4K window
+  flash_attention: true
+
+# ── Positional Encoding ───────────────────────────────────────────────────────
+positional_encoding:
+  type: "rope"
+  base: 500_000                       # Extended base for long-document retrieval
+  rope_scaling:
+    type: "dynamic_ntk"               # [H-POS-1]
+    factor: 8.0
+    apply_to: "full_attention_layers_only"  # Sliding-window layers use unscaled RoPE
+
+# ── Context Window ────────────────────────────────────────────────────────────
+context:
+  context_window: 1_048_576           # 1M tokens [CONFIRMED, P1]
+  max_sequence_length: 1_048_576
+
+# ── Training Precision ────────────────────────────────────────────────────────
+precision:
+  pretraining: "bfloat16"
+  fine_tuning: "bfloat16"
+  inference: "fp8"                    # Likely for Glasswing deployment [H-PREC, SPECULATIVE]
+
+# ── Normalization ─────────────────────────────────────────────────────────────
+normalization:
+  type: "rmsnorm"                     # Standard for modern large models
+  pre_norm: true
+
+# ── Hypotheses This Config Tests ──────────────────────────────────────────────
+tests_hypotheses:
+  - H-MoE-1    # code/cyber expert specialisation
+  - H-ATT-1    # periodic full + sliding attention
+  - H-POS-1    # dynamic NTK on full-attention layers only
+  - C-5        # no attention degradation at 1M tokens
+
+# ── Falsification Conditions ──────────────────────────────────────────────────
+falsification:
+  - condition: "Mini-Mythos MoE does not outperform dense baseline by >5pp on SWE-bench"
+    implication: "H-MoE-1 rejected; MoE is not the primary driver of coding gains"
+  - condition: "BBBF-04 latency probe shows no domain-switching spike"
+    implication: "MoE hypothesis weakened; model may be dense or use static routing"
+  - condition: "128K context Mini-Mythos matches 1M context model on CTF chain tasks"
+    implication: "Context window is not the causal driver; working memory training is"

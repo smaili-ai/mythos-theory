@@ -1,0 +1,87 @@
+# Hymba-Inspired Hybrid Transformer+Mamba Configuration
+# Based on NVIDIA's Hymba-1.5B architecture (public, open-weight).
+# Tests whether hybrid attention+SSM can match MoE on long-context code/cyber tasks.
+# Source: https://developer.nvidia.com/blog/hymba-hybrid-head-architecture-boosts-small-language-model-performance/
+
+model_name: "mini_mythos_hymba_hybrid"
+description: >
+  Hymba-inspired hybrid architecture for long-context efficiency testing (MM-C).
+  Interleaves standard attention heads with Mamba/SSM heads per layer.
+  Tests whether 512K context is achievable at 1/11 the KV cache of a dense model.
+arch: "transformer_mamba_hybrid"
+
+# ── Parameter Budget ──────────────────────────────────────────────────────────
+parameter_budget:
+  total_params: 1_500_000_000         # 1.5B — same active compute as MM-A
+  active_fraction: 1.0
+
+# ── Model Dimensions ──────────────────────────────────────────────────────────
+dimensions:
+  n_layers: 32
+  d_model: 2048
+  n_heads: 16                         # Attention heads
+  d_head: 128
+  d_ff: 8192
+
+# ── Hybrid Head Configuration (Hymba) ─────────────────────────────────────────
+hybrid_heads:
+  attention_heads_per_layer: 8        # Parallel attention heads (high-res recall)
+  mamba_heads_per_layer: 8            # Parallel Mamba heads (efficient summarisation)
+  head_mixing: "parallel"             # Both head types run in parallel, outputs concatenated
+
+# ── Hybrid Layer Schedule ─────────────────────────────────────────────────────
+hybrid_schedule:
+  full_attention_layers: [0, 4, 8, 12, 16, 20, 24, 28, 31]  # 9 full-attention layers
+  hybrid_layers: "remaining"          # 23 hybrid attention+Mamba layers
+
+# ── Attention Configuration ───────────────────────────────────────────────────
+attention:
+  type: "grouped_query_with_rope"
+  kv_groups: 4
+  window_size: 4096                   # Sliding-window for hybrid layers
+  flash_attention: true
+
+# ── Mamba/SSM Configuration ──────────────────────────────────────────────────
+mamba:
+  state_size: 16
+  conv_kernel: 4
+  expand_factor: 2
+  dt_rank: "auto"
+
+# ── Learnable Meta-Tokens (Hymba innovation) ─────────────────────────────────
+meta_tokens:
+  count: 16                           # Prepended learnable cache tokens
+  learnable: true
+
+# ── Cross-Layer KV Sharing ────────────────────────────────────────────────────
+kv_sharing:
+  enabled: true
+  share_every_n_layers: 4            # Share KV cache across 4-layer groups
+
+# ── Positional Encoding ───────────────────────────────────────────────────────
+positional_encoding:
+  type: "rope"
+  base: 100_000
+  rope_scaling:
+    type: "dynamic_ntk"
+    factor: 4.0
+
+# ── Context Window ────────────────────────────────────────────────────────────
+context:
+  context_window: 524_288             # 512K tokens — tests Hymba's long-context claim
+
+# ── Precision ─────────────────────────────────────────────────────────────────
+precision:
+  training: "bfloat16"
+  inference: "bfloat16"
+
+normalization:
+  type: "rmsnorm"
+  pre_norm: true
+
+# ── Hypotheses This Config Tests ──────────────────────────────────────────────
+tests_hypotheses:
+  - H-HYBRID     # Mamba/SSM layers for long-context efficiency
+  - H-ATT-1      # Periodic full attention (satisfied by hybrid schedule)
+  - C-5          # No attention degradation at 512K+ tokens
+  - MM-C         # Hymba long-context efficiency test

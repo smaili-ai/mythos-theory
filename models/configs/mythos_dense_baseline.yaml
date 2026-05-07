@@ -1,0 +1,48 @@
+# Dense Baseline Configuration — Upper Bound Reference
+# Used for MM-01 ablation: MoE vs. Dense at equivalent active parameter budget.
+# This is NOT a Mythos hypothesis; it is the null model for comparison.
+
+model_name: "mythos_dense_baseline"
+description: >
+  Dense transformer with identical active parameter count to mythos_moe_hypothesis.
+  Used to test H-MoE-1: does MoE routing drive the capability jump, or would a
+  dense model with the same active params achieve comparable benchmarks?
+arch: "transformer_dense"
+
+dimensions:
+  n_layers: 48
+  d_model: 8192
+  n_heads: 64
+  d_head: 128
+  d_ff: 32768               # All parameters active per token
+
+attention:
+  type: "grouped_query"
+  kv_groups: 8
+  attention_pattern: "full_causal"
+  flash_attention: true
+
+positional_encoding:
+  type: "rope"
+  base: 500_000
+  rope_scaling:
+    type: "dynamic_ntk"
+    factor: 4.0
+
+context:
+  context_window: 131072    # 128K — same as Mini-Mythos experiments
+
+precision:
+  training: "bfloat16"
+  inference: "bfloat16"
+
+normalization:
+  type: "rmsnorm"
+  pre_norm: true
+
+# ── MM-01 Ablation Parameters ─────────────────────────────────────────────────
+ablation:
+  total_params: 1_500_000_000     # ~1.5B — same active compute as Mini-Mythos Core
+  active_fraction: 1.0            # All params active (dense)
+  comparison_model: "mini_mythos_core.yaml"
+  expected_delta_swe_bench: ">5pp in favour of MoE if H-MoE-1 is correct"

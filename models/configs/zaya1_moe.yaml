@@ -1,0 +1,93 @@
+# ZAYA1-Inspired MoE Configuration — Mini-Mythos Primary Experiment
+# Based on Zyphra's ZAYA1-base architecture (public, open-weight).
+# Upscaled and adapted for Mythos-like code/cyber/math curriculum training.
+# Source: https://www.zyphra.com/post/zaya1
+
+model_name: "mini_mythos_zaya1_moe"
+description: >
+  Mini-Mythos primary experimental config. Uses ZAYA1-inspired architecture:
+  Compressed Convolutional Attention (CCA), nonlinear MLP-based router, and
+  per-layer residual scaling. Targets 128K context with 7B total / 1.5B active params.
+arch: "transformer_moe"
+
+# ── Parameter Budget ──────────────────────────────────────────────────────────
+parameter_budget:
+  total_params: 7_000_000_000       # 7B total
+  active_params_per_token: 1_500_000_000  # 1.5B active
+  active_fraction: 0.214
+
+# ── Model Dimensions ──────────────────────────────────────────────────────────
+dimensions:
+  n_layers: 40
+  d_model: 2048
+  n_heads: 32
+  d_head: 64
+  d_ff: 8192
+
+# ── ZAYA1 MoE Router ──────────────────────────────────────────────────────────
+moe_config:
+  n_experts: 16                       # Scaled-down from Mythos 256; tractable for experiment
+  top_k: 2
+  capacity_factor: 1.25
+  router_type: "zaya1_nonlinear"      # 3-layer MLP: downproj → depth-mixing → MLP
+  router_hidden_dim: 256
+  load_balancing_loss_weight: 0.01
+  per_layer_residual_scaling: true    # Stabilises deep layers
+
+# ── Compressed Convolutional Attention (CCA) ─────────────────────────────────
+attention:
+  type: "compressed_convolutional"    # CCA: attention in latent space (ZAYA1 innovation)
+  kv_groups: 4
+  compression_ratio: 0.25            # 40% prefill/KV cache reduction
+  flash_attention: true
+  attention_pattern: "hybrid_periodic"
+  full_attention_interval: 4
+  sliding_window_size: 2048
+
+# ── Positional Encoding ───────────────────────────────────────────────────────
+positional_encoding:
+  type: "rope"
+  base: 100_000
+  rope_scaling:
+    type: "dynamic_ntk"
+    factor: 4.0
+
+# ── Context Window ────────────────────────────────────────────────────────────
+context:
+  context_window: 131_072             # 128K tokens
+
+# ── Precision ─────────────────────────────────────────────────────────────────
+precision:
+  training: "bfloat16"
+  inference: "fp8"
+
+normalization:
+  type: "rmsnorm"
+  pre_norm: true
+
+# ── Training Curriculum ───────────────────────────────────────────────────────
+training:
+  total_tokens: 500_000_000_000      # 500B tokens
+  domain_weights:
+    code: 0.25
+    math: 0.08
+    cyber: 0.05
+    web_text: 0.40
+    scientific: 0.10
+    multilingual: 0.07
+    instruction: 0.05
+  learning_rate: 3.0e-4
+  warmup_steps: 2000
+  scheduler: "cosine"
+  min_lr: 3.0e-5
+  weight_decay: 0.1
+  gradient_clip: 1.0
+  batch_size_tokens: 4_000_000       # 4M tokens per batch
+
+# ── Hypotheses This Config Tests ──────────────────────────────────────────────
+tests_hypotheses:
+  - H-MoE-1       # code/cyber expert specialisation
+  - H-DATA-1      # cyber corpus proportion sweep
+  - H-CURR-1      # code specialisation drives SWE-bench jump
+  - MM-01         # MoE vs dense ablation
+  - MM-03         # cyber corpus proportion sweep
